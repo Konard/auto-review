@@ -6,7 +6,7 @@
  *   1. Dynamically loads `dotenv` and the Octokit REST client via use-m at runtime.
  *   2. Downloads the description, all comments (issue + review), and the code-diffs of a GitHub pull-request.
  *   3. Fetches every image / file referenced in the description or comments and rewrites the Markdown to point
- *      at the local copies.
+ *      at the local copies (skipping HTML pages).
  *   4. Saves everything into …/owner-repo-pr-<id>/pull-request.md (+ an assets/ sub-folder).
  *
  * Usage:            node auto-review.mjs https://github.com/<owner>/<repo>/pull/<number>
@@ -91,9 +91,14 @@ async function localiseMarkdown(md = '') {
 async function getLocal(urlStr) {
   if (cache.has(urlStr)) return cache.get(urlStr);
   try {
+    const parsed = new URL(urlStr);
+    const ext = path.extname(parsed.pathname) || '';
+    // Skip HTML pages
+    if (/\.html?$/i.test(ext)) return urlStr;
     const res = await fetch(urlStr);
-    if (!res.ok) throw new Error();
-    const ext = path.extname(new URL(urlStr).pathname) || '';
+    const contentType = res.headers.get('content-type') || '';
+    // Skip HTML content
+    if (!res.ok || contentType.startsWith('text/html')) throw new Error();
     const name = `${cache.size}${ext}`;
     const full = path.join(assetsDir, name);
     await fs.writeFile(full, Buffer.from(await res.arrayBuffer()));
@@ -101,7 +106,7 @@ async function getLocal(urlStr) {
     cache.set(urlStr, rel);
     return rel;
   } catch {
-    return urlStr; // leave untouched on failure
+    return urlStr; // leave untouched on failure or non-image
   }
 }
 
